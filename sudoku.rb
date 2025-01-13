@@ -103,102 +103,56 @@ class Sudoku
   def section(n) = Section::new(self, n)
 
   #
-  # Solves the puzzle.
+  # A Sudoku puzzle is solvable if our solver can solve it. Our solver is
+  # perfect™ so this is tautologically true. A puzzle can still be solvable if
+  # it has multiple non-unique solutions.
   #
-  # If `n` is provided and greater than one, returns the nth successful attempt
-  # at solving the puzzle instead of the first one discovered. If this method
-  # returns a solved puzzle with `n = 2`, the puzzle has muliple non-unique
-  # solutions.
-  #
-  # TODO: Speed this up. It takes a long time to find a second solution when
-  # none exists, which is the main cause of slowdown when generating fresh
-  # puzzles.
-  #
-  def solve!(n = 1)
-    # quickly abort if the board is incongruent; this will save time in the
-    # even that we have a board with an unsolvable partial solution
-    return self unless
-      self.congruent?
-
-    # collect a list of all unsolved slots
-    #
-    # NOTE: we tried both grouping these by their section as well as permuting
-    # them randomly; both had dramatically worse performance
-    unsolved = self.size.times.to_a.repeated_permutation(2).select do |row, col|
-      self[row, col] == nil
-    end
-
-    solver = ->(i) do
-      # if we're done but another solution is desired, decrement the counter
-      # for the number desired, say we failed, and try again
-      return false if
-        i >= unsolved.length &&
-        (n -= 1) > 0
-
-      # we're done if out-of-bounds for the list of unsolved locations
-      return true if
-        i >= unsolved.length
-
-      row, col      = unsolved[i]
-      possibilities = self.possibilities(row, col)
-
-      # backtrack if there are no legal guesses for the current slot
-      return false if
-        possibilities.empty?
-
-      # guess randomly until we can recursively generate a legal board; if we
-      # fail completely, unset the slot we've been guessing at
-      possibilities.to_a.shuffle.detect do |try|
-        self[row, col] = try
-        solver[i + 1]
-      end || self[row, col] = nil
-    end
-
-    # run the solver starting at the first unsolved slot
-    solver[0]
-
-    # delete any guesses we made if we didn't result in a solved board; this can
-    # happen if the provided board had an unsolvable partial solution
-    unsolved.each { |(row, col)| self[row, col] = nil } unless
-      self.solved?
-
-    self
+  def solvable?
+    # clone the puzzle, try and solve it
+    self.dup.solve!.solved?
   end
 
   #
-  # Removes values from slots randomly until there are no more locations where
-  # an un-guessed value will still result in a uniquely-solvable puzzle.
+  # A Sudoku puzzle is unique if it has *exactly one* solution.
   #
-  def reduce!
-    # shuffle all the rows and columns
-    locations = self.size.times.to_a.repeated_permutation(2).to_a.shuffle
+  # TODO: this tries an unnecessary third time, get it down to two
+  #
+  def unique?
+    self.solvable? && !self.dup.solve!(2).solved?
+  end
 
-    locations.each do |row, col|
-      # cache the value, we may need to set it back if removal doesn't result in
-      # in a puzzle with a unique solution
-      value = self[row, col]
+  #
+  # We define a Sudoku puzzle to be filled if and only if it contains no empty
+  # (nil) slots.
+  #
+  def filled?
+    self.slots.none?(&:nil?)
+  end
 
-      # This is a performance improvement. One way to solve this is to remove
-      # the element and check if there is one unique solution. Doing this
-      # requires *re-solving* for the value we're trying to remove, which is
-      # unnecessary work.
-      #
-      # Instead, we try the remaining possible values for that slot. For each
-      # attempt, we see if a solution exists. If one does we know that removing
-      # it results in two possible solutions, and so we put the value back.
-      # Since every prior step did this check, we also are guaranteed to end up
-      # with a puzzle with a single solution.
-      unique = (self.possibilities(row, col) - [value]).none? do |v|
-        self[row, col] = v
-        self.solvable?
-      end
+  #
+  # We define a Sudoku puzzle to be legal if and only if it contains no
+  # out-of-bounds values in any of its slots. A puzzle containing unset values
+  # (nils) is still legal.
+  #
+  def legal?
+    self.slots.to_set.subset?(self.values | [nil])
+  end
 
-      unique ?
-        self[row, col] = nil :
-        self[row, col] = value
-    end
+  #
+  # We define a Sudoku puzzle to be congruent if and only if it contains no
+  # slots whose value conflicts with that in another slot (e.g., its set of
+  # incongruencies is empty).
+  #
+  def congruent?
+    self.incongruencies.empty?
+  end
 
-    self
+  #
+  # We define a Sudoku puzzle to be solved if and only if it is filled, legal,
+  # and congruent.
+  #
+  def solved?
+    self.filled? && self.legal? && self.congruent?
   end
 
   #
@@ -257,56 +211,106 @@ class Sudoku
   end
 
   #
-  # A Sudoku puzzle is solvable if our solver can solve it. Our solver is
-  # perfect™ so this is tautologically true. A puzzle can still be solvable if
-  # it has multiple non-unique solutions.
+  # Solves the puzzle.
   #
-  def solvable?
-    # clone the puzzle, try and solve it
-    self.dup.solve!.solved?
+  # If `n` is provided and greater than one, returns the nth successful attempt
+  # at solving the puzzle instead of the first one discovered. If this method
+  # returns a solved puzzle with `n = 2`, the puzzle has muliple non-unique
+  # solutions.
+  #
+  # TODO: Speed this up. It takes a long time to find a second solution when
+  # none exists, which is the main cause of slowdown when generating fresh
+  # puzzles.
+  #
+  def solve!(n = 1)
+    # quickly abort if the board is incongruent; this will save time in the
+    # even that we have a board with an unsolvable partial solution
+    return self unless
+      self.congruent?
+
+    # collect a list of all unsolved slots
+    #
+    # NOTE: we tried both grouping these by their section as well as permuting
+    # them randomly; both had dramatically worse performance
+    unsolved = self.size.times.to_a.repeated_permutation(2).select do |row, col|
+      self[row, col] == nil
+    end
+
+    solver = ->(i) do
+      # if we're done but another solution is desired, decrement the counter
+      # for the number desired, say we failed, and try again
+      return false if
+        i >= unsolved.length &&
+        (n -= 1) > 0
+
+      # we're done if out-of-bounds for the list of unsolved locations
+      return true if
+        i >= unsolved.length
+
+      row, col      = unsolved[i]
+      possibilities = self.possibilities(row, col)
+
+      # backtrack if there are no legal guesses for the current slot
+      return false if
+        possibilities.empty?
+
+      # guess randomly until we can recursively generate a legal board; if we
+      # fail completely, unset the slot we've been guessing at
+      possibilities.to_a.shuffle.detect do |try|
+        self[row, col] = try
+        solver[i + 1]
+      end || self[row, col] = nil
+    end
+
+    # run the solver starting at the first unsolved slot
+    solver[0]
+
+    # We used to walk through the list of unsolved squares to explicitly delete
+    # any guesses we made if we didn't get a solution. This was made unnecessary
+    # by the failure condition that unsets each failed slot.
+    #
+    # Keeping this here for now, in case I'm wrong and we have to bring it back.
+    #
+    # unsolved.each { |(row, col)| self[row, col] = nil } unless
+    #   self.solved?
+
+    self
   end
 
   #
-  # A Sudoku puzzle is unique if it has *exactly one* solution.
+  # Removes values from slots randomly until there are no more locations where
+  # an un-guessed value will still result in a uniquely-solvable puzzle.
   #
-  # TODO: this tries an unnecessary third time, get it down to two
-  #
-  def unique?
-    self.solvable? && !self.dup.solve!(2).solved?
-  end
+  def reduce!
+    # shuffle all the rows and columns
+    locations = self.size.times.to_a.repeated_permutation(2).to_a.shuffle
 
-  #
-  # We define a Sudoku puzzle to be filled if and only if it contains no empty
-  # (nil) slots.
-  #
-  def filled?
-    self.slots.none?(&:nil?)
-  end
+    locations.each do |row, col|
+      # cache the value, we may need to set it back if removal doesn't result in
+      # in a puzzle with a unique solution
+      value = self[row, col]
 
-  #
-  # We define a Sudoku puzzle to be legal if and only if it contains no
-  # out-of-bounds values in any of its slots. A puzzle containing unset values
-  # (nils) is still legal.
-  #
-  def legal?
-    self.slots.to_set.subset?(self.values | [nil])
-  end
+      # This is a performance improvement. One way to solve this is to remove
+      # the element and check if there is one unique solution. Doing this
+      # requires *re-solving* for the value we're trying to remove, which is
+      # unnecessary work.
+      #
+      # Instead, we try the remaining possible values for that slot. For each
+      # attempt, we see if a solution exists. If one does we know that removing
+      # it results in two possible solutions, and so we put the value back.
+      # Since every prior step did this check, we also are guaranteed to end up
+      # with a puzzle with a single solution.
+      unique = (self.possibilities(row, col) - [value]).none? do |v|
+        self[row, col] = v
+        self.solvable?
+      end
 
-  #
-  # We define a Sudoku puzzle to be congruent if and only if it contains no
-  # slots whose value conflicts with that in another slot (e.g., its set of
-  # incongruencies is empty).
-  #
-  def congruent?
-    self.incongruencies.empty?
-  end
+      unique ?
+        self[row, col] = nil :
+        self[row, col] = value
+    end
 
-  #
-  # We define a Sudoku puzzle to be solved if and only if it is filled, legal,
-  # and congruent.
-  #
-  def solved?
-    self.filled? && self.legal? && self.congruent?
+    self
   end
 
   protected
