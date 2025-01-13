@@ -58,6 +58,14 @@ class Sudoku
     self.new.solve!
   end
 
+  #
+  # Generate a random Sudoku grid that's been reduced as far as possible (no
+  # more values can be removed without allowing multiple solutions).
+  #
+  def self.puzzle
+    self.randomized.reduce!
+  end
+
   def initialize
     self.dimension = DIMENSION
     self.slots     = [nil] * dimension ** 4
@@ -100,13 +108,20 @@ class Sudoku
   # returns a solved puzzle with `n = 2`, the puzzle has muliple non-unique
   # solutions.
   #
+  # TODO: Speed this up. It takes a long time to find a second solution when
+  # none exists, which is the main cause of slowdown when generating fresh
+  # puzzles.
+  #
   def solve!(n = 1)
     # quickly abort if the board is incongruent; this will save time in the
     # even that we have a board with an unsolvable partial solution
     return self unless
       self.congruent?
 
-    # get a list of unsolved slots
+    # collect a list of all unsolved slots
+    #
+    # NOTE: we tried both grouping these by their section as well as permuting
+    # them randomly; both had dramatically worse performance
     unsolved = self.size.times.to_a.repeated_permutation(2).select do |row, col|
       self[row, col] == nil
     end
@@ -144,6 +159,42 @@ class Sudoku
     # happen if the provided board had an unsolvable partial solution
     unsolved.each { |(row, col)| self[row, col] = nil } unless
       self.solved?
+
+    self
+  end
+
+  #
+  # Removes values from slots randomly until there are no more locations where
+  # an un-guessed value will still result in a uniquely-solvable puzzle.
+  #
+  def reduce!
+    # shuffle all the rows and columns
+    locations = self.size.times.to_a.repeated_permutation(2).to_a.shuffle
+
+    locations.each do |row, col|
+      # cache the value, we may need to set it back if removal doesn't result in
+      # in a puzzle with a unique solution
+      value = self[row, col]
+
+      # This is a performance improvement. One way to solve this is to remove
+      # the element and check if there is one unique solution. Doing this
+      # requires *re-solving* for the value we're trying to remove, which is
+      # unnecessary work.
+      #
+      # Instead, we try the remaining possible values for that slot. For each
+      # attempt, we see if a solution exists. If one does we know that removing
+      # it results in two possible solutions, and so we put the value back.
+      # Since every prior step did this check, we also are guaranteed to end up
+      # with a puzzle with a single solution.
+      unique = (self.possibilities(row, col) - [value]).none? do |v|
+        self[row, col] = v
+        self.solvable?
+      end
+
+      unique ?
+        self[row, col] = nil :
+        self[row, col] = value
+    end
 
     self
   end
@@ -215,6 +266,8 @@ class Sudoku
 
   #
   # A Sudoku puzzle is unique if it has *exactly one* solution.
+  #
+  # TODO: this tries an unnecessary third time, get it down to two
   #
   def unique?
     self.solvable? && !self.dup.solve!(2).solved?
@@ -627,5 +680,13 @@ class TestSudoku
     def test_solved
       assert_predicate sudoku, :solved?
     end
+  end
+
+  def test_puzzle_solvable
+    assert_predicate Sudoku.puzzle, :solvable?
+  end
+
+  def test_puzzle_unfilled
+    assert_predicate Sudoku.puzzle, :filled?
   end
 end
