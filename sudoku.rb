@@ -27,9 +27,7 @@ require 'minitest/autorun'
 # be 1. Challenging!
 class Sudoku
   DIMENSION = 3
-  SIZE      = DIMENSION ** 2
-  SLOTS     = DIMENSION ** 4
-  VALUES    = 1.upto(SIZE).to_set.freeze
+  attr_reader :dimension
 
   #
   # The format used when inspecting the grid. It looks misaligned, but it isn't
@@ -53,8 +51,16 @@ class Sudoku
   ].join("\n")
 
   def initialize
-    self.slots = [nil] * SLOTS
-    self.freeze # the interior of slots remains mutable
+    self.dimension = DIMENSION
+    self.slots     = [nil] * dimension ** 4
+
+    # pre-memoize these before we are frozen
+    self.size
+    self.values
+
+    # the interior of slots remains mutable but the slots themselves and
+    # our instance data is not
+    self.freeze
   end
 
   def inspect
@@ -62,6 +68,9 @@ class Sudoku
     # instead of "nil" or ""
     FORMAT % (self.slots.map { |v| v.nil? ? ' ' : v.to_s })
   end
+
+  def size   = @_size   ||= self.dimension ** 2
+  def values = @_values ||= 1.upto(self.size).to_set.freeze
 
   def [] (row, col)      = self.slots[self.index_for(row, col)]
   def []=(row, col, val) = self.slots[self.index_for(row, col)] = val
@@ -80,7 +89,7 @@ class Sudoku
   def possibilities(row, col)
     # we start assuming all numbers are possible, then remove the ones that
     # conflict
-    possibilities = VALUES.dup
+    possibilities = self.values.dup
     section       = self.section_of(row, col)
 
     # Save the current value of the cell. We remove it before checking for
@@ -110,7 +119,7 @@ class Sudoku
   # incongruencies by themselves.
   #
   def incongruencies
-    SIZE.times.reduce(Set.new) do |indices, i|
+    self.size.times.reduce(Set.new) do |indices, i|
       indices.merge self.row(i)    .incongruencies
       indices.merge self.col(i)    .incongruencies
       indices.merge self.section(i).incongruencies
@@ -131,7 +140,7 @@ class Sudoku
   # (nils) is still legal.
   #
   def legal?
-    self.slots.to_set.subset?(VALUES | [nil])
+    self.slots.to_set.subset?(self.values | [nil])
   end
 
   #
@@ -153,14 +162,17 @@ class Sudoku
 
   protected
 
+  attr_writer   :dimension
   attr_accessor :slots
 
   def index_for(row, col)
-    row * SIZE + col
+    row * self.size + col
   end
 
   def section_of(row, col)
-    (row / DIMENSION * DIMENSION) + (col / DIMENSION)
+    # the section bumps up *one* for every third column and by *three* for every
+    # third row
+    (row / self.dimension * self.dimension) + (col / self.dimension)
   end
 end
 
@@ -182,7 +194,7 @@ class Row
   def []=(col, val) = self.sudoku[self.row, col] = val
 
   def slots
-    Sudoku::SIZE.times.map { |i| self[i] }
+    self.sudoku.size.times.map { |i| self[i] }
   end
 
   def incongruencies
@@ -238,7 +250,7 @@ class Col
   def []=(row, val) = self.sudoku[row, self.col] = val
 
   def slots
-    Sudoku::SIZE.times.map { |i| self[i] }
+    self.sudoku.size.times.map { |i| self[i] }
   end
 
   def incongruencies
@@ -274,9 +286,11 @@ class Section
   ].join("\n")
 
   def initialize(sudoku, index)
+    dimension = sudoku.dimension
+
     self.sudoku = sudoku
-    self.row    = (index / Sudoku::DIMENSION) * Sudoku::DIMENSION
-    self.col    = (index % Sudoku::DIMENSION) * Sudoku::DIMENSION
+    self.row    = (index / dimension) * dimension
+    self.col    = (index % dimension) * dimension
 
     self.freeze
   end
@@ -285,10 +299,8 @@ class Section
   def []=(row, col, val) = self.sudoku[self.row + row, self.col + col] = val
 
   def slots
-    Sudoku::DIMENSION.times.map do |row|
-      Sudoku::DIMENSION.times.map do |col|
-        self[row, col]
-      end
+    self.sudoku.dimension.times.to_a.repeated_permutation(2).map do |row, col|
+      self[row, col]
     end.flatten
   end
 
@@ -327,20 +339,16 @@ class TestSudoku
     end
 
     def test_empty
-      Sudoku::SIZE.times do |i|
-        Sudoku::SIZE.times do |j|
-          assert_nil sudoku[i, j]
-        end
+      sudoku.size.times.to_a.repeated_permutation(2).map do |row, col|
+        assert_nil sudoku[row, col]
       end
     end
 
     def test_indirectly_empty
-      Sudoku::SIZE.times do |i|
-        Sudoku::SIZE.times do |j|
-          assert_nil sudoku.row(i)[j]
-          assert_nil sudoku.col(j)[i]
-          assert_nil sudoku.section(i)[j / 3, j % 3]
-        end
+      sudoku.size.times.to_a.repeated_permutation(2).map do |i, j|
+        assert_nil sudoku.row(i)[j]
+        assert_nil sudoku.col(i)[j]
+        assert_nil sudoku.section(i)[j / sudoku.dimension, j % sudoku.dimension]
       end
     end
 
@@ -353,10 +361,8 @@ class TestSudoku
     end
 
     def test_unlimited_possibilities
-      Sudoku::SIZE.times do |i|
-        Sudoku::SIZE.times do |j|
-          assert_equal Sudoku::VALUES, sudoku.possibilities(i, j)
-        end
+      sudoku.size.times.to_a.repeated_permutation(2).map do |row, col|
+        assert_equal sudoku.values, sudoku.possibilities(row, col)
       end
     end
 
@@ -413,10 +419,8 @@ class TestSudoku
     end
 
     def test_one_possibility
-      Sudoku::SIZE.times do |i|
-        Sudoku::SIZE.times do |j|
-          assert_equal Set[sudoku[i, j]], sudoku.possibilities(i, j)
-        end
+      sudoku.size.times.to_a.repeated_permutation(2).map do |row, col|
+        assert_equal Set[sudoku[row, col]], sudoku.possibilities(row, col)
       end
     end
 
