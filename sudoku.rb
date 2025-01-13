@@ -114,6 +114,13 @@ class Sudoku
   end
 
   #
+  # We define a Sudoku puzzle to be reduced if and only if it cannot have any of
+  # the values in its slots removed.
+  #
+  def reduced?
+    self == self.dup.reduce!
+  end
+
   #
   # A Sudoku puzzle is solvable if our solver can solve it. Our solver is
   # perfect™ so this is tautologically true. A puzzle can still be solvable if
@@ -133,6 +140,7 @@ class Sudoku
     self.solvable? && !self.dup.solve!(2).solved?
   end
 
+  #
   # Returns a `Set` of the legal possibilities for the cell at the given row
   # and column. This method ignores the current contents of the cell. It only
   # performs a basic pass of the core rules of Sudoku; it does not attempt to
@@ -731,6 +739,10 @@ class TestSudoku
 
     def test_puzzle_unfilled
       refute_predicate sudoku, :filled?
+    end
+
+    def test_puzzle_reduced
+      assert_predicate sudoku, :reduced?
     end
   end
 end
