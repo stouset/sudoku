@@ -42,7 +42,7 @@ class Sudoku
     self.dimension = dimension
     self.slots     = [nil] * (dimension ** 4)
 
-    # pre-memoize these before we are frozen
+    # pre-memoize before freeze
     self.fmt
     self.size
     self.values
@@ -364,7 +364,7 @@ class Sudoku
   # long and tedious but ultimately straightforward.
   #
   def fmt
-    @_format ||= begin
+    @_fmt ||= begin
       dimension = self.dimension
       digits    = Math::log10(self.values.max + 1).ceil
       fmt       = "% #{digits}s"
@@ -386,16 +386,12 @@ class Sudoku
 end
 
 class Row
-  # TODO: dynamically generate based upon dimension
-  FORMAT = [
-    '┌───────┬───────┬───────┐',
-    '│ %s %s %s │ %s %s %s │ %s %s %s │',
-    '└───────┴───────┴───────┘',
-  ].join("\n")
-
   def initialize(sudoku, row)
     self.sudoku = sudoku
     self.row    = row
+
+    # pre-memoize before freeze
+    self.fmt
 
     self.freeze
   end
@@ -423,36 +419,41 @@ class Row
   end
 
   def inspect
-    FORMAT % self.slots.map { it.nil? ? ' ' : it.to_s }
+    self.fmt % self.slots.map { it.nil? ? ' ' : it.to_s }
   end
 
   protected
 
   attr_accessor :sudoku
   attr_accessor :row
+
+  def fmt
+    @_fmt ||= begin
+      dimension = self.sudoku.dimension
+      digits    = Math::log10(self.sudoku.values.max + 1).ceil
+      fmt       = "% #{digits}s"
+
+      #     = the digits           + the separators  + one on either side
+      width = (dimension * digits) + (dimension - 1) + 2
+
+      header  = '┌' + (['─' * width] * dimension).join('┬') + '┐' + "\n"
+      footer  = '└' + (['─' * width] * dimension).join('┴') + '┘' + "\n"
+
+      section = ''   + ([fmt]     * dimension).join(' ')
+      row     = '│ ' + ([section] * dimension).join(' │ ') + ' │' + "\n"
+
+      "\n" + header + row + footer + "\n"
+    end
+  end
 end
 
 class Col
-  # TODO: dynamically generate based upon dimension
-  FORMAT = [
-    '┌───┐',
-    '│ %s │',
-    '│ %s │',
-    '│ %s │',
-    '├───┤',
-    '│ %s │',
-    '│ %s │',
-    '│ %s │',
-    '├───┤',
-    '│ %s │',
-    '│ %s │',
-    '│ %s │',
-    '└───┘',
-  ].join("\n")
-
   def initialize(sudoku, col)
     self.sudoku = sudoku
     self.col    = col
+
+    # pre-memoize before freeze
+    self.fmt
 
     self.freeze
   end
@@ -480,31 +481,45 @@ class Col
   end
 
   def inspect
-    FORMAT % self.slots.map { it.nil? ? ' ' : it.to_s }
+    self.fmt % self.slots.map { it.nil? ? '' : it.to_s }
   end
 
   protected
 
   attr_accessor :sudoku
   attr_accessor :col
+
+  def fmt
+    @_fmt ||= begin
+      dimension = self.sudoku.dimension
+      digits    = Math::log10(self.sudoku.values.max + 1).ceil
+      fmt       = "% #{digits}s"
+
+      #     = the digits + one on either side
+      width = digits     + 2
+
+      header  = '┌' + ['─' * width].join + '┐' + "\n"
+      divider = '├' + ['─' * width].join + '┤' + "\n"
+      footer  = '└' + ['─' * width].join + '┘' + "\n"
+
+      row     = '│ ' + fmt + ' │' + "\n"
+      rows    = ''   + ([row] * dimension).join
+
+      "\n" + header + ([rows] * dimension).join(divider) + footer + "\n"
+    end
+  end
 end
 
 class Section
-  # TODO: dynamically generate based upon dimension
-  FORMAT = [
-    '┌───────┐',
-    '│ %s %s %s │',
-    '│ %s %s %s │',
-    '│ %s %s %s │',
-    '└───────┘',
-  ].join("\n")
-
   def initialize(sudoku, index)
     dimension = sudoku.dimension
 
     self.sudoku = sudoku
     self.row    = (index / dimension) * dimension
     self.col    = (index % dimension) * dimension
+
+    # pre-memoize before freeze
+    self.fmt
 
     self.freeze
   end
@@ -542,7 +557,7 @@ class Section
   end
 
   def inspect
-    FORMAT % self.slots.map { it.nil? ? ' ' : it.to_s }
+    self.fmt % self.slots.map { it.nil? ? '' : it.to_s }
   end
 
   protected
@@ -550,6 +565,26 @@ class Section
   attr_accessor :sudoku
   attr_accessor :row
   attr_accessor :col
+
+  def fmt
+    @_fmt ||= begin
+      dimension = self.sudoku.dimension
+      digits    = Math::log10(self.sudoku.values.max + 1).ceil
+      fmt       = "% #{digits}s"
+
+      #     = the digits           + the separators  + one on either side
+      width = (dimension * digits) + (dimension - 1) + 2
+
+      header  = '┌' + ['─' * width].join + '┐' + "\n"
+      footer  = '└' + ['─' * width].join + '┘' + "\n"
+
+      section = ''   + ([fmt]     * dimension).join(' ')
+      row     = '│ ' + section + ' │' + "\n"
+      rows    = ''   + ([row]     * dimension).join
+
+      "\n" + header + rows + footer + "\n"
+    end
+  end
 end
 
 class TestSudoku
