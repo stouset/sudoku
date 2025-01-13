@@ -367,17 +367,17 @@ class Row
   end
 
   def incongruencies
-    indices = Hash.new { |h,k| h[k] = [] }
+    dupes = Hash.new { |h, k| h[k] = [] }
 
     # we store a map of every value to the indices it's found in; congruent
     # values will only have *one* such index
-    self.slots.each.with_index { |v, i| indices[v] << [row, i] }
+    self.slots.each.with_index { |value, col| dupes[value] << [self.row, col] }
 
-    indices
-      .reject { |k, v| k.nil? }        # not interested in nil values
-      .reject { |k, v| v.length == 1 } # not interested in unique values
-      .map    { |k, v| v }             # we only need the indices themselves
-      .reduce([], &:+)                 # quick and dirty single-level flatten
+    dupes
+      .reject { |value, indices| value.nil? }
+      .reject { |value, indices| indices.length == 1 }
+      .values
+      .reduce([], &:+) # quick and dirty single-level flatten
       .to_set
   end
 
@@ -424,14 +424,16 @@ class Col
   end
 
   def incongruencies
-    indices = Hash.new { |h,k| h[k] = [] }
+    dupes = Hash.new { |h, k| h[k] = [] }
 
-    self.slots.each.with_index { |v, i| indices[v] << [i, col] }
+    # we store a map of every value to the indices it's found in; congruent
+    # values will only have *one* such index
+    self.slots.each.with_index { |value, row| dupes[value] << [row, self.col] }
 
-    indices
-      .reject { |k, v| k.nil? }
-      .reject { |k, v| v.length == 1 }
-      .map    { |k, v| v }
+    dupes
+      .reject { |value, indices| value.nil? }
+      .reject { |value, indices| indices.length == 1 }
+      .values
       .reduce([], &:+) # quick and dirty single-level flatten
       .to_set
   end
@@ -480,18 +482,20 @@ class Section
   end
 
   def incongruencies
-    indices = Hash.new { |h,k| h[k] = [] }
+    dupes = Hash.new { |h, k| h[k] = [] }
 
-    self.slots.each_slice(3).with_index do |row, i|
-      row.each.with_index do |v, j|
-        indices[v] << [self.row + i, self.col + j]
+    # we store a map of every value to the indices it's found in; congruent
+    # values will only have *one* such index
+    self.slots.each_slice(3).with_index do |slice, row|
+      slice.each.with_index do |value, col|
+        dupes[value] << [self.row + row, self.col + col]
       end
     end
 
-    indices
-      .reject { |k, v| k.nil? }
-      .reject { |k, v| v.length == 1 }
-      .map    { |k, v| v }
+    dupes
+      .reject { |value, indices| value.nil? }
+      .reject { |value, indices| indices.length == 1 }
+      .values
       .reduce([], &:+) # quick and dirty single-level flatten
       .to_set
   end
