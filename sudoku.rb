@@ -80,7 +80,7 @@ class Sudoku
   def size   = @_size   ||= self.dimension ** 2
   def values = @_values ||= 1.upto(self.size).to_set.freeze
 
-  def dup   = self.class.new.tap { |s| s.send(:slots).replace self.slots}
+  def dup   = self.class.new.tap { |s| s.send(:slots).replace self.slots }
   def clone = self.dup
 
   def ==(rhs) = self.dimension == rhs.dimension && self.slots == rhs.slots
@@ -92,9 +92,22 @@ class Sudoku
   def col(n)     = Col::new(self, n)
   def section(n) = Section::new(self, n)
 
-  def solve!
+  #
+  # Solves the puzzle.
+  #
+  # If `n` is provided and greater than one, returns the nth successful attempt
+  # at solving the puzzle instead of the first one discovered. If this method
+  # returns a solved puzzle with `n = 2`, the puzzle has muliple non-unique
+  # solutions.
+  #
+  def solve!(n = 1)
+    # quickly abort if the board is incongruent; this will save time in the
+    # even that we have a board with an unsolvable partial solution
+    return self unless
+      self.congruent?
+
     # get a list of unsolved slots
-    unsolved = 9.times.to_a.repeated_permutation(2).select do |row, col|
+    unsolved = self.size.times.to_a.repeated_permutation(2).select do |row, col|
       self[row, col] == nil
     end
 
@@ -110,12 +123,8 @@ class Sudoku
       return false if
         possibilities.empty?
 
-      # quickly abort if the board is incongruent; this will save time in the
-      # even that we have a board with an unsolvable partial solution
-      return false unless
-        self.congruent?
-
-      # guess randomly until we can recursively generate a legal board
+      # guess randomly until we can recursively generate a legal board; if we
+      # fail completely, unset the slot we've been guessing at
       possibilities.to_a.shuffle.detect do |try|
         self[row, col] = try
         solver[i + 1]
@@ -189,6 +198,14 @@ class Sudoku
   end
 
   #
+  # A Sudoku puzzle is solvable if our solver can solve it. Our solver is
+  # perfect™ so this is tautologically true.
+  #
+  def solvable?
+    # clone the puzzle, try and solve it
+    self.dup.solve!.solved?
+  end
+
   # We define a Sudoku puzzle to be filled if and only if it contains no empty
   # (nil) slots.
   #
@@ -523,6 +540,54 @@ class TestSudoku
 
       refute_predicate sudoku, :solved?
       assert_empty     sudoku.incongruencies
+    end
+  end
+
+  class TestUnsolvable < Minitest::Test
+    def sudoku
+      @sudoku ||= Sudoku.new.tap do |s|
+        s.send(:slots).replace [
+          5,   1,   6,   8,   4,   9,   7,   3,   2,
+          3, nil,   7,   6, nil,   5, nil, nil, nil,
+          8, nil,   9,   7, nil, nil, nil,   6,   5,
+          1,   3,   5, nil,   6, nil,   9, nil,   7,
+          4,   7,   2,   5,   9,   1, nil, nil,   6,
+          9,   6,   8,   3,   7, nil, nil,   5, nil,
+          2,   5,   3,   1,   8,   6, nil,   7,   4,
+          6,   8,   4,   2, nil,   7,   5, nil, nil,
+          7,   9,   1, nil,   5, nil,   6, nil,   8,
+        ]
+      end
+    end
+
+    def test_unsolvable
+      refute_predicate sudoku, :solvable?
+    end
+
+    def test_remains_unsolved
+      refute_predicate sudoku.solve!, :solved?
+    end
+  end
+
+  class TestRandomized < Minitest::Test
+    def sudoku
+      @sudoku ||= Sudoku.randomized
+    end
+
+    def test_congruent
+      assert_predicate sudoku, :congruent?
+    end
+
+    def test_filled
+      assert_predicate sudoku, :filled?
+    end
+
+    def test_legal
+      assert_predicate sudoku, :legal?
+    end
+
+    def test_solved
+      assert_predicate sudoku, :solved?
     end
   end
 end
