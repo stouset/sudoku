@@ -1,0 +1,43 @@
+AllCops:
+  ParserEngine: parser_prism
+  TargetRubyVersion: 3.4
+  NewCops: enable
+
+# Eventually Enable
+
+Style/Documentation:
+  Enabled: false
+
+# Configured
+
+Layout/SpaceAroundOperators:
+  EnforcedStyleForExponentOperator: space
+
+Metrics/ClassLength:
+  Max: 150
+
+Metrics/MethodLength:
+  Max: 15
+
+Naming/MemoizedInstanceVariableName:
+  EnforcedStyleForLeadingUnderscores: required
+
+Style/AccessorGrouping:
+  EnforcedStyle: separated
+
+Style/Lambda:
+  EnforcedStyle: literal
+
+Style/TrailingCommaInArrayLiteral:
+  EnforcedStyleForMultiline: consistent_comma
+
+# Disabled
+
+Layout/ExtraSpacing:
+  Enabled: false
+
+Style/RedundantSelf:
+  Enabled: false
+
+Style/ColonMethodCall:
+  Enabled: false

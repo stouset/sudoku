@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'minitest/autorun'
 
 #
@@ -38,7 +40,7 @@ class Sudoku
 
   def initialize(dimension = DEFAULT_DIMENSION)
     self.dimension = dimension
-    self.slots     = [nil] * dimension ** 4
+    self.slots     = [nil] * (dimension ** 4)
 
     # pre-memoize these before we are frozen
     self.fmt
@@ -50,33 +52,57 @@ class Sudoku
     self.freeze
   end
 
-  def size   = @_size   ||= self.dimension ** 2
-  def values = @_values ||= 1.upto(self.size).to_set.freeze
-
-  def dup   = self.class.new(self.dimension).tap { |s| s.slots.replace(self.slots) }
-  def clone = self.dup
-
-  def ==(rhs) =
-    (self.dimension == rhs.dimension) &&
-    (self.slots     == rhs.slots)
-
   def [] (row, col)      = self.slots[self.index_for(row, col)]
   def []=(row, col, val) = self.slots[self.index_for(row, col)] = val
 
-  def inspect
-    # process the slots first to ensure that nils are printed as a blank string
-    self.fmt % (self.slots.map { |v| v || '' })
+  #
+  # Two Sudoku grids are equal if they have the same dimension and
+  # contents.
+  #
+  def ==(other)
+    (self.dimension == other.dimension) && (self.slots == other.slots)
   end
 
-  def row(n)     = Row::new(self, n)
-  def col(n)     = Col::new(self, n)
-  def section(n) = Section::new(self, n)
+  #
+  # The width, height, and number of sections in this Sudoku grid.
+  #
+  def size
+    @_size ||= self.dimension ** 2
+  end
 
   #
-  # Iterates over every row and column.
+  # The set of legal values in this Sudoku grid.
   #
-  def each_pair(&block)
-    self.size.times.to_a.repeated_permutation(2, &block)
+  def values
+    @_values ||= 1.upto(self.size).to_set.freeze
+  end
+
+  #
+  # Duplicates a Sudoku grid, copying its dimensions and slots into the
+  # new one.
+  #
+  def dup
+    dup = self.class.new(self.dimension)
+    dup.slots.replace(self.slots)
+    dup
+  end
+
+  alias_method :clone, :dup
+
+  def inspect
+    # process the slots first to ensure that nils are printed as a blank string
+    self.fmt % (self.slots.map { it || '' })
+  end
+
+  def row(row)      = Row::new(self, row)
+  def col(col)      = Col::new(self, col)
+  def section(sect) = Section::new(self, sect)
+
+  #
+  # Iterates over every row and column pair.
+  #
+  def each_index(&)
+    self.size.times.to_a.repeated_permutation(2, &)
   end
 
   #
@@ -118,7 +144,7 @@ class Sudoku
   # its slots produces a puzzle which has multiple solutions.
   #
   def reduced?
-    self == self.dup.reduce!
+    self == self.reduce
   end
 
   #
@@ -128,16 +154,17 @@ class Sudoku
   #
   def solvable?
     # clone the puzzle, try and solve it
-    self.dup.solve!.solved?
+    self.solve.solved?
   end
 
   #
   # A Sudoku puzzle is unique if it has *exactly one* solution.
   #
-  # TODO: this tries an unnecessary third time, get it down to two
-  #
   def unique?
-    self.solvable? && !self.dup.solve!(2).solved?
+    # TODO: this tries an unnecessary third time; we should rewrite `solve` so
+    # we can (in one pass) distinguish between a puzzle that was unsolvable,
+    # solved once, or solved twice
+    self.solvable? && !self.solve(2).solved?
   end
 
   #
@@ -151,10 +178,9 @@ class Sudoku
     # TODO: since this *actually* writes to `slots`, we have to do
     # bounds-checking on `row` and `col` to not accidentally extend the number
     # of slots we have (for instance, when doing random puzzle generation)
-    return Set.new if (
+    return Set.new if
       row >= self.size ||
       col >= self.size
-    )
 
     # we start by assuming all numbers are possible, then we remove any that
     # cause a conflict
@@ -177,6 +203,8 @@ class Sudoku
       # put the cached value back in place
       self[row, col] = current
     end
+
+    possibilities
   end
 
   #
@@ -198,12 +226,16 @@ class Sudoku
   #
   # Solves the puzzle.
   #
+  # Returns the current puzzle unmodified if it is already solved or if
+  # it is unsolvable.
+  #
   # If `n` is provided and greater than one, returns the nth successful attempt
   # at solving the puzzle instead of the first one discovered. If this method
   # returns a solved puzzle with `n = 2`, the puzzle has muliple non-unique
   # solutions.
   #
-  # TODO: Speed this up.
+  # TODO: Speed this up. Also `n = 0` is meaningless and solves the puzzle
+  # anyway. Reconsider the semantics of this parameter.
   #
   def solve!(n = 1)
     # quickly abort if the board is incongruent; this will save time in the
@@ -215,7 +247,7 @@ class Sudoku
     #
     # NOTE: we tried both grouping these by their section as well as permuting
     # them randomly; both had dramatically worse performance
-    unsolved = self.each_pair.select do |row, col|
+    unsolved = self.each_index.select do |row, col|
       self[row, col].nil?
     end
 
@@ -248,31 +280,33 @@ class Sudoku
     # run the solver starting at the first unsolved slot
     solver[0]
 
-    # We used to walk through the list of unsolved squares to explicitly delete
-    # any guesses we made if we didn't get a solution. This was made unnecessary
-    # by the failure condition that unsets each failed slot.
-    #
-    # Keeping this here for now, in case I'm wrong and we have to bring it back.
-    #
-    # unsolved.each { |(row, col)| self[row, col] = nil } unless
-    #   self.solved?
-
     self
+  end
+
+  #
+  # Returns a copy of the current Sudoku grid but solved.
+  #
+  def solve(*)
+    self.dup.solve!(*)
   end
 
   #
   # Removes values from slots randomly until there are no more locations where
   # an un-guessed value will still result in a uniquely-solvable puzzle.
   #
+  # Returns the current puzzle unmodified if it is already reduced or if it
+  # already allows for multiple solutions.
+  #
   def reduce!
     # abort early if we already contain multiple solutions
     return self if
       self.unique?
 
-    # shuffle all the rows and columns
-    locations = self.each_pair.to_a.shuffle
+    # shuffle all the rows and columns to produce a non-deterministic
+    # reduced result
+    indices = self.each_index.to_a.shuffle
 
-    locations.each do |row, col|
+    indices.each do |row, col|
       # cache the value, we may need to set it back if removal doesn't result in
       # in a puzzle with a unique solution
       value = self[row, col]
@@ -292,12 +326,19 @@ class Sudoku
         self.solvable?
       end
 
-      unique ?
-        self[row, col] = nil :
-        self[row, col] = value
+      # if the current value is a unique solution, we can remove it; otherwise
+      # we have to set it back to what it was originally
+      self[row, col] = unique ? nil : value
     end
 
     self
+  end
+
+  #
+  # Returns a copy of the current Sudoku grid but solved.
+  #
+  def reduce
+    self.dup.reduce!
   end
 
   protected
@@ -306,7 +347,7 @@ class Sudoku
   attr_writer :slots
 
   def index_for(row, col)
-    row * self.size + col
+    (row * self.size) + col
   end
 
   def section_of(row, col)
@@ -325,7 +366,7 @@ class Sudoku
   def fmt
     @_format ||= begin
       dimension = self.dimension
-      digits     = Math::log10(self.values.max + 1).ceil
+      digits    = Math::log10(self.values.max + 1).ceil
       fmt       = "% #{digits}s"
 
       #     = the digits           + the separators  + one on either side
@@ -335,9 +376,9 @@ class Sudoku
       divider = '╟' + (['─' * width] * dimension).join('┼') + '╢' + "\n"
       footer  = '╚' + (['═' * width] * dimension).join('╧') + '╝' + "\n"
 
-      section = ""   + ([fmt]     * dimension).join(" ")
-      row     = "║ " + ([section] * dimension).join(" │ ") + " ║" + "\n"
-      rows    = ""   + ([row]     * dimension).join
+      section = ''   + ([fmt]     * dimension).join(' ')
+      row     = '║ ' + ([section] * dimension).join(' │ ') + ' ║' + "\n"
+      rows    = ''   + ([row]     * dimension).join
 
       "\n" + header + ([rows] * dimension).join(divider) + footer + "\n"
     end
@@ -363,7 +404,7 @@ class Row
   def []=(col, val) = self.sudoku[self.row, col] = val
 
   def slots
-    self.sudoku.size.times.map { |i| self[i] }
+    self.sudoku.size.times.map { self[it] }
   end
 
   def incongruencies
@@ -374,15 +415,15 @@ class Row
     self.slots.each.with_index { |value, col| dupes[value] << [self.row, col] }
 
     dupes
-      .reject { |value, indices| value.nil? }
-      .reject { |value, indices| indices.length == 1 }
+      .reject { |value, _indices| value.nil? }
+      .reject { |_value, indices| indices.length == 1 }
       .values
       .reduce([], &:+) # quick and dirty single-level flatten
       .to_set
   end
 
   def inspect
-    FORMAT % self.slots.map { |v| v.nil? ? ' ' : v.to_s }
+    FORMAT % self.slots.map { it.nil? ? ' ' : it.to_s }
   end
 
   protected
@@ -393,7 +434,7 @@ end
 
 class Col
   # TODO: dynamically generate based upon dimension
-  FORMAT =  [
+  FORMAT = [
     '┌───┐',
     '│ %s │',
     '│ %s │',
@@ -420,7 +461,7 @@ class Col
   def []=(row, val) = self.sudoku[row, self.col] = val
 
   def slots
-    self.sudoku.size.times.map { |i| self[i] }
+    self.sudoku.size.times.map { self[it] }
   end
 
   def incongruencies
@@ -431,15 +472,15 @@ class Col
     self.slots.each.with_index { |value, row| dupes[value] << [row, self.col] }
 
     dupes
-      .reject { |value, indices| value.nil? }
-      .reject { |value, indices| indices.length == 1 }
+      .reject { |value, _indices| value.nil? }
+      .reject { |_value, indices| indices.length == 1 }
       .values
       .reduce([], &:+) # quick and dirty single-level flatten
       .to_set
   end
 
   def inspect
-    FORMAT % self.slots.map { |v| v.nil? ? ' ' : v.to_s }
+    FORMAT % self.slots.map { it.nil? ? ' ' : it.to_s }
   end
 
   protected
@@ -471,12 +512,12 @@ class Section
   def [] (row, col)      = self.sudoku[self.row + row, self.col + col]
   def []=(row, col, val) = self.sudoku[self.row + row, self.col + col] = val
 
-  def each_pair(&block)
-    self.sudoku.dimension.times.to_a.repeated_permutation(2, &block)
+  def each_index(&)
+    self.sudoku.dimension.times.to_a.repeated_permutation(2, &)
   end
 
   def slots
-    self.each_pair.map do |row, col|
+    self.each_index.map do |row, col|
       self[row, col]
     end.flatten
   end
@@ -493,15 +534,15 @@ class Section
     end
 
     dupes
-      .reject { |value, indices| value.nil? }
-      .reject { |value, indices| indices.length == 1 }
+      .reject { |value, _indices| value.nil? }
+      .reject { |_value, indices| indices.length == 1 }
       .values
       .reduce([], &:+) # quick and dirty single-level flatten
       .to_set
   end
 
   def inspect
-    FORMAT % self.slots.map { |v| v.nil? ? ' ' : v.to_s }
+    FORMAT % self.slots.map { it.nil? ? ' ' : it.to_s }
   end
 
   protected
@@ -514,19 +555,29 @@ end
 class TestSudoku
   class TestEmpty < Minitest::Test
     def sudoku
-      @sudoku ||= Sudoku.new
+      @_sudoku ||= Sudoku.new
     end
 
     def test_empty
-      sudoku.each_pair.map do |row, col|
+      sudoku.each_index.map do |row, col|
         assert_nil sudoku[row, col]
       end
     end
 
-    def test_indirectly_empty
-      sudoku.each_pair.map do |i, j|
-        assert_nil sudoku.row(i)[j]
-        assert_nil sudoku.col(i)[j]
+    def test_empty_rows
+      sudoku.each_index.map do |row, col|
+        assert_nil sudoku.row(row)[col]
+      end
+    end
+
+    def test_empty_columns
+      sudoku.each_index.map do |row, col|
+        assert_nil sudoku.col(col)[row]
+      end
+    end
+
+    def test_empty_sections
+      sudoku.each_index.map do |i, j|
         assert_nil sudoku.section(i)[j / sudoku.dimension, j % sudoku.dimension]
       end
     end
@@ -540,7 +591,7 @@ class TestSudoku
     end
 
     def test_unlimited_possibilities
-      sudoku.each_pair.map do |row, col|
+      sudoku.each_index.map do |row, col|
         assert_equal sudoku.values, sudoku.possibilities(row, col)
       end
     end
@@ -574,7 +625,7 @@ class TestSudoku
     def sudoku
       # TODO: a nice way to construct pre-made grids would be nice, but I don't
       # feel excited by any I've come up with yet so this will do for now
-      @sudoku ||= Sudoku.new.tap do |s|
+      @_sudoku ||= Sudoku.new.tap do |s|
         s.slots.replace [
           7, 4, 9, 5, 8, 1, 3, 2, 6,
           1, 8, 2, 7, 3, 6, 9, 5, 4,
@@ -584,7 +635,7 @@ class TestSudoku
           3, 9, 1, 2, 5, 8, 6, 4, 7,
           8, 6, 3, 4, 7, 5, 2, 9, 1,
           2, 5, 4, 8, 1, 9, 7, 6, 3,
-          9, 1, 7, 6, 2, 3, 4, 8, 5
+          9, 1, 7, 6, 2, 3, 4, 8, 5,
         ]
       end
     end
@@ -598,7 +649,7 @@ class TestSudoku
     end
 
     def test_one_possibility
-      sudoku.each_pair.map do |row, col|
+      sudoku.each_index.map do |row, col|
         assert_equal Set[sudoku[row, col]], sudoku.possibilities(row, col)
       end
     end
@@ -645,7 +696,7 @@ class TestSudoku
 
   class TestUnsolvable < Minitest::Test
     def sudoku
-      @sudoku ||= Sudoku.new.tap do |s|
+      @_sudoku ||= Sudoku.new.tap do |s|
         s.slots.replace [
           5,   1,   6,   8,   4,   9,   7,   3,   2,
           3, nil,   7,   6, nil,   5, nil, nil, nil,
@@ -671,7 +722,7 @@ class TestSudoku
 
   class TestDimensionOne < Minitest::Test
     def sudoku
-      @sudoku ||= Sudoku.new(1)
+      @_sudoku ||= Sudoku.new(1)
     end
 
     def test_only_one_solution
@@ -693,7 +744,7 @@ class TestSudoku
 
   class TestSolvable < Minitest::Test
     def sudoku
-      @sudoku ||= Sudoku.new.tap do |s|
+      @_sudoku ||= Sudoku.new.tap do |s|
         s.slots.replace [
           nil, nil, nil,   2, nil, nil, nil,   8,   6,
             1, nil, nil,   8,   9, nil, nil, nil,   7,
@@ -715,7 +766,7 @@ class TestSudoku
 
   class TestRandomized < Minitest::Test
     def sudoku
-      @sudoku ||= Sudoku.randomized
+      @_sudoku ||= Sudoku.randomized
     end
 
     def test_congruent
@@ -738,7 +789,7 @@ class TestSudoku
   class TestPuzzle < Minitest::Test
     def sudoku
       # TODO: bump to higher puzzle sizes when it's fast enough
-      @sudoku ||= Sudoku.puzzle(2)
+      @_sudoku ||= Sudoku.puzzle(2)
     end
 
     def test_puzzle_solvable
