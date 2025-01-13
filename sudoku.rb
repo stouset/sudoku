@@ -27,7 +27,6 @@ require 'minitest/autorun'
 # be 1. Challenging!
 class Sudoku
   DIMENSION = 3
-  attr_reader :dimension
 
   #
   # The format used when inspecting the grid. It looks misaligned, but it isn't
@@ -49,6 +48,9 @@ class Sudoku
     '║ %s %s %s │ %s %s %s │ %s %s %s ║',
     '╚═══════╧═══════╧═══════╝'
   ].join("\n")
+
+  attr_reader :dimension
+  attr_reader :slots
 
   #
   # Generate a random, completely-filled Sudoku board. We do this by first
@@ -88,7 +90,7 @@ class Sudoku
   def size   = @_size   ||= self.dimension ** 2
   def values = @_values ||= 1.upto(self.size).to_set.freeze
 
-  def dup   = self.class.new.tap { |s| s.send(:slots).replace self.slots }
+  def dup   = self.class.new.tap { |s| s.slots.replace(self.slots) }
   def clone = self.dup
 
   def ==(rhs) = self.dimension == rhs.dimension && self.slots == rhs.slots
@@ -309,8 +311,8 @@ class Sudoku
 
   protected
 
-  attr_writer   :dimension
-  attr_accessor :slots
+  attr_writer :dimension
+  attr_writer :slots
 
   def index_for(row, col)
     row * self.size + col
@@ -543,7 +545,7 @@ class TestSudoku
       # TODO: a nice way to construct pre-made grids would be nice, but I don't
       # feel excited by any I've come up with yet so this will do for now
       @sudoku ||= Sudoku.new.tap do |s|
-        s.send(:slots).replace [
+        s.slots.replace [
           7, 4, 9, 5, 8, 1, 3, 2, 6,
           1, 8, 2, 7, 3, 6, 9, 5, 4,
           6, 3, 5, 9, 4, 2, 1, 7, 8,
@@ -614,7 +616,7 @@ class TestSudoku
   class TestUnsolvable < Minitest::Test
     def sudoku
       @sudoku ||= Sudoku.new.tap do |s|
-        s.send(:slots).replace [
+        s.slots.replace [
           5,   1,   6,   8,   4,   9,   7,   3,   2,
           3, nil,   7,   6, nil,   5, nil, nil, nil,
           8, nil,   9,   7, nil, nil, nil,   6,   5,
@@ -641,7 +643,7 @@ class TestSudoku
   class TestSolvable < Minitest::Test
     def sudoku
       @sudoku ||= Sudoku.new.tap do |s|
-        s.send(:slots).replace [
+        s.slots.replace [
           nil, nil, nil,   2, nil, nil, nil,   8,   6,
             1, nil, nil,   8,   9, nil, nil, nil,   7,
           nil,   3, nil, nil, nil, nil,   9,   1,   2,
