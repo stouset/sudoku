@@ -50,6 +50,14 @@ class Sudoku
     '╚═══════╧═══════╧═══════╝'
   ].join("\n")
 
+  #
+  # Generate a random, completely-filled Sudoku board. We do this by first
+  # creating an empty board, then recursively solving it.
+  #
+  def self.randomized
+    self.new.solve!
+  end
+
   def initialize
     self.dimension = DIMENSION
     self.slots     = [nil] * dimension ** 4
@@ -72,12 +80,58 @@ class Sudoku
   def size   = @_size   ||= self.dimension ** 2
   def values = @_values ||= 1.upto(self.size).to_set.freeze
 
+  def dup   = self.class.new.tap { |s| s.send(:slots).replace self.slots}
+  def clone = self.dup
+
+  def ==(rhs) = self.dimension == rhs.dimension && self.slots == rhs.slots
+
   def [] (row, col)      = self.slots[self.index_for(row, col)]
   def []=(row, col, val) = self.slots[self.index_for(row, col)] = val
 
   def row(n)     = Row::new(self, n)
   def col(n)     = Col::new(self, n)
   def section(n) = Section::new(self, n)
+
+  def solve!
+    # get a list of unsolved slots
+    unsolved = 9.times.to_a.repeated_permutation(2).select do |row, col|
+      self[row, col] == nil
+    end
+
+    solver = ->(i) do
+      # we're done if out-of-bounds for the unsolved locations
+      return true if
+        i >= unsolved.length
+
+      row, col      = unsolved[i]
+      possibilities = self.possibilities(row, col)
+
+      # backtrack if there are no legal guesses for the current slot
+      return false if
+        possibilities.empty?
+
+      # quickly abort if the board is incongruent; this will save time in the
+      # even that we have a board with an unsolvable partial solution
+      return false unless
+        self.congruent?
+
+      # guess randomly until we can recursively generate a legal board
+      possibilities.to_a.shuffle.detect do |try|
+        self[row, col] = try
+        solver[i + 1]
+      end || self[row, col] = nil
+    end
+
+    # run the solver starting at the first unsolved slot
+    solver[0]
+
+    # delete any guesses we made if we didn't result in a solved board; this can
+    # happen if the provided board had an unsolvable partial solution
+    unsolved.each { |(row, col)| self[row, col] = nil } unless
+      self.solved?
+
+    self
+  end
 
   #
   # Returns a `Set` of the legal possibilities for the cell at the given row
@@ -87,6 +141,14 @@ class Sudoku
   # the same row, column, or section are themselves legal.
   #
   def possibilities(row, col)
+    # TODO: since this *actually* writes to `slots`, we have to do
+    # bounds-checking on `row` and `col` to not accidentally extend them when
+    # we generate random grids
+    return Set.new if (
+      row >= self.size ||
+      col >= self.size
+    )
+
     # we start assuming all numbers are possible, then remove the ones that
     # conflict
     possibilities = self.values.dup
