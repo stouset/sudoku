@@ -114,8 +114,8 @@ class Sudoku
   end
 
   #
-  # We define a Sudoku puzzle to be reduced if and only if it cannot have any of
-  # the values in its slots removed.
+  # We define a Sudoku puzzle to be reduced if and only if it clearing any of
+  # its slots produces a puzzle which has multiple solutions.
   #
   def reduced?
     self == self.dup.reduce!
@@ -265,6 +265,10 @@ class Sudoku
   # an un-guessed value will still result in a uniquely-solvable puzzle.
   #
   def reduce!
+    # abort early if we already contain multiple solutions
+    return self if
+      self.unique?
+
     # shuffle all the rows and columns
     locations = self.each_pair.to_a.shuffle
 
