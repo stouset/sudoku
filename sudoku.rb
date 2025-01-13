@@ -103,6 +103,13 @@ class Sudoku
   def section(n) = Section::new(self, n)
 
   #
+  # Iterates over every row and column.
+  #
+  def each_pair(&block)
+    self.size.times.to_a.repeated_permutation(2, &block)
+  end
+
+  #
   # A Sudoku puzzle is solvable if our solver can solve it. Our solver is
   # perfect™ so this is tautologically true. A puzzle can still be solvable if
   # it has multiple non-unique solutions.
@@ -232,7 +239,7 @@ class Sudoku
     #
     # NOTE: we tried both grouping these by their section as well as permuting
     # them randomly; both had dramatically worse performance
-    unsolved = self.size.times.to_a.repeated_permutation(2).select do |row, col|
+    unsolved = self.each_pair.select do |row, col|
       self[row, col] == nil
     end
 
@@ -283,7 +290,7 @@ class Sudoku
   #
   def reduce!
     # shuffle all the rows and columns
-    locations = self.size.times.to_a.repeated_permutation(2).to_a.shuffle
+    locations = self.each_pair.to_a.shuffle
 
     locations.each do |row, col|
       # cache the value, we may need to set it back if removal doesn't result in
@@ -451,6 +458,10 @@ class Section
   def [] (row, col)      = self.sudoku[self.row + row, self.col + col]
   def []=(row, col, val) = self.sudoku[self.row + row, self.col + col] = val
 
+  def each_pair(&block)
+    self.sudoku.dimension.times.to_a.repeated_permutation(2, &block)
+  end
+
   def slots
     self.sudoku.dimension.times.to_a.repeated_permutation(2).map do |row, col|
       self[row, col]
@@ -492,13 +503,13 @@ class TestSudoku
     end
 
     def test_empty
-      sudoku.size.times.to_a.repeated_permutation(2).map do |row, col|
+      sudoku.each_pair.map do |row, col|
         assert_nil sudoku[row, col]
       end
     end
 
     def test_indirectly_empty
-      sudoku.size.times.to_a.repeated_permutation(2).map do |i, j|
+      sudoku.each_pair.map do |i, j|
         assert_nil sudoku.row(i)[j]
         assert_nil sudoku.col(i)[j]
         assert_nil sudoku.section(i)[j / sudoku.dimension, j % sudoku.dimension]
@@ -514,7 +525,7 @@ class TestSudoku
     end
 
     def test_unlimited_possibilities
-      sudoku.size.times.to_a.repeated_permutation(2).map do |row, col|
+      sudoku.each_pair.map do |row, col|
         assert_equal sudoku.values, sudoku.possibilities(row, col)
       end
     end
@@ -572,7 +583,7 @@ class TestSudoku
     end
 
     def test_one_possibility
-      sudoku.size.times.to_a.repeated_permutation(2).map do |row, col|
+      sudoku.each_pair.map do |row, col|
         assert_equal Set[sudoku[row, col]], sudoku.possibilities(row, col)
       end
     end
