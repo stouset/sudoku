@@ -112,7 +112,13 @@ class Sudoku
     end
 
     solver = ->(i) do
-      # we're done if out-of-bounds for the unsolved locations
+      # if we're done but another solution is desired, decrement the counter
+      # for the number desired, say we failed, and try again
+      return false if
+        i >= unsolved.length &&
+        (n -= 1) > 0
+
+      # we're done if out-of-bounds for the list of unsolved locations
       return true if
         i >= unsolved.length
 
@@ -199,13 +205,22 @@ class Sudoku
 
   #
   # A Sudoku puzzle is solvable if our solver can solve it. Our solver is
-  # perfect™ so this is tautologically true.
+  # perfect™ so this is tautologically true. A puzzle can still be solvable if
+  # it has multiple non-unique solutions.
   #
   def solvable?
     # clone the puzzle, try and solve it
     self.dup.solve!.solved?
   end
 
+  #
+  # A Sudoku puzzle is unique if it has *exactly one* solution.
+  #
+  def unique?
+    self.solvable? && !self.dup.solve!(2).solved?
+  end
+
+  #
   # We define a Sudoku puzzle to be filled if and only if it contains no empty
   # (nil) slots.
   #
@@ -566,6 +581,29 @@ class TestSudoku
 
     def test_remains_unsolved
       refute_predicate sudoku.solve!, :solved?
+    end
+  end
+
+
+  class TestSolvable < Minitest::Test
+    def sudoku
+      @sudoku ||= Sudoku.new.tap do |s|
+        s.send(:slots).replace [
+          nil, nil, nil,   2, nil, nil, nil,   8,   6,
+            1, nil, nil,   8,   9, nil, nil, nil,   7,
+          nil,   3, nil, nil, nil, nil,   9,   1,   2,
+            3,   4,   5,   1,   7, nil,   6, nil, nil,
+          nil,   9, nil, nil,   5,   2, nil, nil, nil,
+            7, nil,   6,   9,   4,   3, nil,   5,   8,
+          nil, nil, nil, nil, nil,   4, nil, nil,   5,
+          nil, nil,   7,   5,   1,   9, nil,   4,   3,
+          nil, nil,   4,   3, nil,   6, nil, nil, nil,
+        ]
+      end
+    end
+
+    def test_solvable
+      assert_predicate sudoku, :solvable?
     end
   end
 
