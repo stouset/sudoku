@@ -117,18 +117,38 @@ class Sudoku
     end
   end
 
+  #
+  # We define a Sudoku puzzle to be filled if and only if it contains no empty
+  # (nil) slots.
+  #
+  def filled?
+    self.slots.none?(&:nil?)
+  end
+
+  #
+  # We define a Sudoku puzzle to be legal if and only if it contains no
+  # out-of-bounds values in any of its slots. A puzzle containing unset values
+  # (nils) is still legal.
+  #
+  def legal?
+    self.slots.to_set.subset?(VALUES | [nil])
+  end
+
+  #
+  # We define a Sudoku puzzle to be congruent if and only if it contains no
+  # slots whose value conflicts with that in another slot (e.g., its set of
+  # incongruencies is empty).
+  #
+  def congruent?
+    self.incongruencies.empty?
+  end
+
+  #
+  # We define a Sudoku puzzle to be solved if and only if it is filled, legal,
+  # and congruent.
+  #
   def solved?
-    # the puzzle is unsolved if any slots contained values outside the allowed
-    # ones; it's kind of clever but this is sort of the only place we *actually*
-    # need to do input validation on the slot contents
-    return false unless
-      self.slots.to_set.subset?(VALUES)
-
-    # the puzzle is unsolved if any slots have incongruencies
-    return false unless
-      self.incongruencies.empty?
-
-    true
+    self.filled? && self.legal? && self.congruent?
   end
 
   protected
