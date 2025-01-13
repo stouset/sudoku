@@ -719,11 +719,18 @@ class TestSudoku
     end
   end
 
-  def test_puzzle_solvable
-    assert_predicate Sudoku.puzzle, :solvable?
-  end
+  class TestPuzzle < Minitest::Test
+    def sudoku
+      # TODO: bump to higher puzzle sizes when it's fast enough
+      @sudoku ||= Sudoku.puzzle(2)
+    end
 
-  def test_puzzle_unfilled
-    assert_predicate Sudoku.puzzle, :filled?
+    def test_puzzle_solvable
+      assert_predicate sudoku, :solvable?
+    end
+
+    def test_puzzle_unfilled
+      refute_predicate sudoku, :filled?
+    end
   end
 end
