@@ -14,40 +14,8 @@ require 'minitest/autorun'
 # changes to the original grid to be made indirectly through these methods of
 # access.
 #
-# TODO: We could actually pretty easily make the Sudoku "dimension" size dynamic
-# for a dimension-2 4x4 grid, dimension-3 9x9 grid, dimension-4 16x16 grid, etc.
-# I started down this path and even had the `FORMAT` string written to do this.
-# But then I realized that a dimension-4 grid would require two-character values
-# and so it would need to adapt to the growing width of the values themselves. I
-# could have used hex for dimension-4 grids and Base64 for all the way up to
-# dimension-8 grids! But then what if someone wanted a dimension-9 (81x81 grid)?
-# Won't somebody please think of the Computer Scientists?
-#
-# Also vaguely interesting: a dimension-1 Sudoku grid has one cell and it must
-# be 1. Challenging!
 class Sudoku
-  DIMENSION = 3
-
-  #
-  # The format used when inspecting the grid. It looks misaligned, but it isn't
-  # (the %s format string is two characters long while the corresponding grid
-  # borders themselves are only one).
-  #
-  FORMAT = [
-    '╔═══════╤═══════╤═══════╗',
-    '║ %s %s %s │ %s %s %s │ %s %s %s ║',
-    '║ %s %s %s │ %s %s %s │ %s %s %s ║',
-    '║ %s %s %s │ %s %s %s │ %s %s %s ║',
-    '╟───────┼───────┼───────╢',
-    '║ %s %s %s │ %s %s %s │ %s %s %s ║',
-    '║ %s %s %s │ %s %s %s │ %s %s %s ║',
-    '║ %s %s %s │ %s %s %s │ %s %s %s ║',
-    '╟───────┼───────┼───────╢',
-    '║ %s %s %s │ %s %s %s │ %s %s %s ║',
-    '║ %s %s %s │ %s %s %s │ %s %s %s ║',
-    '║ %s %s %s │ %s %s %s │ %s %s %s ║',
-    '╚═══════╧═══════╧═══════╝'
-  ].join("\n")
+  DEFAULT_DIMENSION = 3
 
   attr_reader :dimension
   attr_reader :slots
@@ -56,23 +24,24 @@ class Sudoku
   # Generate a random, completely-filled Sudoku board. We do this by first
   # creating an empty board, then recursively solving it.
   #
-  def self.randomized
-    self.new.solve!
+  def self.randomized(dimension = DEFAULT_DIMENSION)
+    self.new(dimension).solve!
   end
 
   #
   # Generate a random Sudoku grid that's been reduced as far as possible (no
   # more values can be removed without allowing multiple solutions).
   #
-  def self.puzzle
-    self.randomized.reduce!
+  def self.puzzle(dimension = DEFAULT_DIMENSION)
+    self.randomized(dimension).reduce!
   end
 
-  def initialize
-    self.dimension = DIMENSION
+  def initialize(dimension = DEFAULT_DIMENSION)
+    self.dimension = dimension
     self.slots     = [nil] * dimension ** 4
 
     # pre-memoize these before we are frozen
+    self.fmt
     self.size
     self.values
 
@@ -81,16 +50,10 @@ class Sudoku
     self.freeze
   end
 
-  def inspect
-    # process the slots first to ensure that nils are a single blank character
-    # instead of "nil" or ""
-    FORMAT % (self.slots.map { |v| v.nil? ? ' ' : v.to_s })
-  end
-
   def size   = @_size   ||= self.dimension ** 2
   def values = @_values ||= 1.upto(self.size).to_set.freeze
 
-  def dup   = self.class.new.tap { |s| s.slots.replace(self.slots) }
+  def dup   = self.class.new(self.dimension).tap { |s| s.slots.replace(self.slots) }
   def clone = self.dup
 
   def ==(rhs) =
@@ -99,6 +62,11 @@ class Sudoku
 
   def [] (row, col)      = self.slots[self.index_for(row, col)]
   def []=(row, col, val) = self.slots[self.index_for(row, col)] = val
+
+  def inspect
+    # process the slots first to ensure that nils are printed as a blank string
+    self.fmt % (self.slots.map { |v| v || '' })
+  end
 
   def row(n)     = Row::new(self, n)
   def col(n)     = Col::new(self, n)
@@ -334,9 +302,38 @@ class Sudoku
     # one
     (row / self.dimension * self.dimension) + (col / self.dimension)
   end
+
+  #
+  # The format used when inspecting the grid.
+  #
+  # We previously used a fixed-size format, but needed to switch to a function
+  # in order to support dimensions of Sudoku other than 3. The logic here is
+  # long and tedious but ultimately straightforward.
+  #
+  def fmt
+    @_format ||= begin
+      dimension = self.dimension
+      digits     = Math::log10(self.values.max + 1).ceil
+      fmt       = "% #{digits}s"
+
+      #     = the digits           + the separators  + one on either side
+      width = (dimension * digits) + (dimension - 1) + 2
+
+      header  = '╔' + (['═' * width] * dimension).join('╤') + '╗' + "\n"
+      divider = '╟' + (['─' * width] * dimension).join('┼') + '╢' + "\n"
+      footer  = '╚' + (['═' * width] * dimension).join('╧') + '╝' + "\n"
+
+      section = ""   + ([fmt]     * dimension).join(" ")
+      row     = "║ " + ([section] * dimension).join(" │ ") + " ║" + "\n"
+      rows    = ""   + ([row]     * dimension).join
+
+      "\n" + header + ([rows] * dimension).join(divider) + footer + "\n"
+    end
+  end
 end
 
 class Row
+  # TODO: dynamically generate based upon dimension
   FORMAT = [
     '┌───────┬───────┬───────┐',
     '│ %s %s %s │ %s %s %s │ %s %s %s │',
@@ -383,6 +380,7 @@ class Row
 end
 
 class Col
+  # TODO: dynamically generate based upon dimension
   FORMAT =  [
     '┌───┐',
     '│ %s │',
@@ -437,6 +435,7 @@ class Col
 end
 
 class Section
+  # TODO: dynamically generate based upon dimension
   FORMAT = [
     '┌───────┐',
     '│ %s %s %s │',
@@ -463,7 +462,7 @@ class Section
   end
 
   def slots
-    self.sudoku.dimension.times.to_a.repeated_permutation(2).map do |row, col|
+    self.each_pair.map do |row, col|
       self[row, col]
     end.flatten
   end
@@ -654,6 +653,27 @@ class TestSudoku
     end
   end
 
+  class TestDimensionOne < Minitest::Test
+    def sudoku
+      @sudoku ||= Sudoku.new(1)
+    end
+
+    def test_only_one_solution
+      assert_equal Set[1], sudoku.possibilities(0, 0)
+    end
+
+    def test_solved
+      sudoku[0, 0] = 1
+
+      assert_predicate sudoku, :solved?
+    end
+
+    def test_out_of_bounds
+      sudoku[0, 0] = 2
+
+      refute_predicate sudoku, :solved?
+    end
+  end
 
   class TestSolvable < Minitest::Test
     def sudoku
