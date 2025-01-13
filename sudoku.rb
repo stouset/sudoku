@@ -93,7 +93,9 @@ class Sudoku
   def dup   = self.class.new.tap { |s| s.slots.replace(self.slots) }
   def clone = self.dup
 
-  def ==(rhs) = self.dimension == rhs.dimension && self.slots == rhs.slots
+  def ==(rhs) =
+    (self.dimension == rhs.dimension) &&
+    (self.slots     == rhs.slots)
 
   def [] (row, col)      = self.slots[self.index_for(row, col)]
   def []=(row, col, val) = self.slots[self.index_for(row, col)] = val
@@ -107,25 +109,6 @@ class Sudoku
   #
   def each_pair(&block)
     self.size.times.to_a.repeated_permutation(2, &block)
-  end
-
-  #
-  # A Sudoku puzzle is solvable if our solver can solve it. Our solver is
-  # perfect™ so this is tautologically true. A puzzle can still be solvable if
-  # it has multiple non-unique solutions.
-  #
-  def solvable?
-    # clone the puzzle, try and solve it
-    self.dup.solve!.solved?
-  end
-
-  #
-  # A Sudoku puzzle is unique if it has *exactly one* solution.
-  #
-  # TODO: this tries an unnecessary third time, get it down to two
-  #
-  def unique?
-    self.solvable? && !self.dup.solve!(2).solved?
   end
 
   #
@@ -163,6 +146,25 @@ class Sudoku
   end
 
   #
+  #
+  # A Sudoku puzzle is solvable if our solver can solve it. Our solver is
+  # perfect™ so this is tautologically true. A puzzle can still be solvable if
+  # it has multiple non-unique solutions.
+  #
+  def solvable?
+    # clone the puzzle, try and solve it
+    self.dup.solve!.solved?
+  end
+
+  #
+  # A Sudoku puzzle is unique if it has *exactly one* solution.
+  #
+  # TODO: this tries an unnecessary third time, get it down to two
+  #
+  def unique?
+    self.solvable? && !self.dup.solve!(2).solved?
+  end
+
   # Returns a `Set` of the legal possibilities for the cell at the given row
   # and column. This method ignores the current contents of the cell. It only
   # performs a basic pass of the core rules of Sudoku; it does not attempt to
@@ -171,15 +173,15 @@ class Sudoku
   #
   def possibilities(row, col)
     # TODO: since this *actually* writes to `slots`, we have to do
-    # bounds-checking on `row` and `col` to not accidentally extend them when
-    # we generate random grids
+    # bounds-checking on `row` and `col` to not accidentally extend the number
+    # of slots we have (for instance, when doing random puzzle generation)
     return Set.new if (
       row >= self.size ||
       col >= self.size
     )
 
-    # we start assuming all numbers are possible, then remove the ones that
-    # conflict
+    # we start by assuming all numbers are possible, then we remove any that
+    # cause a conflict
     possibilities = self.values.dup
     section       = self.section_of(row, col)
 
@@ -225,13 +227,11 @@ class Sudoku
   # returns a solved puzzle with `n = 2`, the puzzle has muliple non-unique
   # solutions.
   #
-  # TODO: Speed this up. It takes a long time to find a second solution when
-  # none exists, which is the main cause of slowdown when generating fresh
-  # puzzles.
+  # TODO: Speed this up.
   #
   def solve!(n = 1)
     # quickly abort if the board is incongruent; this will save time in the
-    # even that we have a board with an unsolvable partial solution
+    # event that we have a board with an unsolvable partial solution
     return self unless
       self.congruent?
 
@@ -240,7 +240,7 @@ class Sudoku
     # NOTE: we tried both grouping these by their section as well as permuting
     # them randomly; both had dramatically worse performance
     unsolved = self.each_pair.select do |row, col|
-      self[row, col] == nil
+      self[row, col].nil?
     end
 
     solver = ->(i) do
@@ -330,8 +330,8 @@ class Sudoku
   end
 
   def section_of(row, col)
-    # the section bumps up *one* for every third column and by *three* for every
-    # third row
+    # every third row, the row bumps by one; every third row the column bumps by
+    # one
     (row / self.dimension * self.dimension) + (col / self.dimension)
   end
 end
@@ -365,10 +365,10 @@ class Row
     self.slots.each.with_index { |v, i| indices[v] << [row, i] }
 
     indices
-      .reject { |k, v| k.nil? }       # not interested in nil values
-      .select { |k, v| v.length > 1 } # not interested in unique values
-      .map    { |k, v| v }            # we only need the indices themselves
-      .reduce([], &:+)                # quick and dirty single-level flatten
+      .reject { |k, v| k.nil? }        # not interested in nil values
+      .reject { |k, v| v.length == 1 } # not interested in unique values
+      .map    { |k, v| v }             # we only need the indices themselves
+      .reduce([], &:+)                 # quick and dirty single-level flatten
       .to_set
   end
 
@@ -420,7 +420,7 @@ class Col
 
     indices
       .reject { |k, v| k.nil? }
-      .select { |k, v| v.length > 1 }
+      .reject { |k, v| v.length == 1 }
       .map    { |k, v| v }
       .reduce([], &:+) # quick and dirty single-level flatten
       .to_set
@@ -479,7 +479,7 @@ class Section
 
     indices
       .reject { |k, v| k.nil? }
-      .select { |k, v| v.length > 1 }
+      .reject { |k, v| v.length == 1 }
       .map    { |k, v| v }
       .reduce([], &:+) # quick and dirty single-level flatten
       .to_set
