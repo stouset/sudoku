@@ -175,36 +175,21 @@ class Sudoku
   # the same row, column, or section are themselves legal.
   #
   def possibilities(row, col)
-    # TODO: since this *actually* writes to `slots`, we have to do
-    # bounds-checking on `row` and `col` to not accidentally extend the number
-    # of slots we have (for instance, when doing random puzzle generation)
-    return Set.new if
-      row >= self.size ||
-      col >= self.size
+    # calculate the section of the row and column, and also the index of that
+    # "global" row and column within that specific section's slots
+    #
+    # TODO: section_index seems like it ought to be a helper method on Section
+    section        = self.section_of(row, col)
+    section_index  = (row % self.dimension * self.dimension) + (col % self.dimension)
 
-    # we start by assuming all numbers are possible, then we remove any that
-    # cause a conflict
-    possibilities = self.values.dup
-    section       = self.section_of(row, col)
-
-    # Save the current value of the cell. We remove it before checking for
-    # conflicts as removing the cell from the slots in its row, column, and
-    # section after the fact is "hard".
-    current = self[row, col]
-
-    begin
-      self[row, col] = nil
-
-      # remove all values that are slots in the same row, column, or section
-      possibilities -= self.row(row)        .slots
-      possibilities -= self.col(col)        .slots
-      possibilities -= self.section(section).slots
-    ensure
-      # put the cached value back in place
-      self[row, col] = current
+    # given the set of all possible values, remove any values that occur in the
+    # same row, column, or section (*except* for ones at the location we're
+    # trying to investigate)
+    self.values.dup.tap do |possibilities|
+      possibilities.subtract(self.row(row)        .slots.tap { it[col] = nil })
+      possibilities.subtract(self.col(col)        .slots.tap { it[row] = nil })
+      possibilities.subtract(self.section(section).slots.tap { it[section_index] = nil })
     end
-
-    possibilities
   end
 
   #
